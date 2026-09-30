@@ -1,0 +1,6 @@
+{
+  "name": "AI Employee Helpdesk Assistant",
+  "description": "Ask questions about company policies and support processes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
