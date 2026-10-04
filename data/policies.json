@@ -1,0 +1,62 @@
+[
+  {
+    "id": "leave-policy",
+    "title": "Leave Policy",
+    "category": "HR & Time Off",
+    "summary": "Employees receive 12 casual leaves per calendar year.",
+    "sampleQuestion": "How many casual leaves do I get?",
+    "isApproved": true,
+    "version": 3,
+    "updatedAt": "2026-10-04T02:02:48.181Z",
+    "updatedBy": "Priya (Admin)"
+  },
+  {
+    "id": "wfh-policy",
+    "title": "Work From Home Policy",
+    "category": "Workplace Flexibility",
+    "summary": "Employees may work from home for up to 5 days per month.",
+    "sampleQuestion": "Can I work from home for 5 days?",
+    "isApproved": true,
+    "version": 1,
+    "updatedAt": "2026-09-01T09:00:00.000Z",
+    "updatedBy": "Admin (HR Operations)"
+  },
+  {
+    "id": "medical-reimbursement",
+    "title": "Medical Reimbursement Policy",
+    "category": "Benefits & Claims",
+    "summary": "Employees must submit the following documents for medical reimbursement:",
+    "details": [
+      "Medical bill",
+      "Prescription",
+      "Reimbursement form"
+    ],
+    "sampleQuestion": "What documents are needed for medical reimbursement?",
+    "isApproved": true,
+    "version": 1,
+    "updatedAt": "2026-09-01T09:00:00.000Z",
+    "updatedBy": "Admin (Benefits Team)"
+  },
+  {
+    "id": "password-policy",
+    "title": "Corporate Password Policy",
+    "category": "IT Security",
+    "summary": "Employees can reset their corporate password through the IT self-service portal.",
+    "sampleQuestion": "I need to reset my password",
+    "isApproved": true,
+    "version": 1,
+    "updatedAt": "2026-09-01T09:00:00.000Z",
+    "updatedBy": "Admin (IT Security Lead)"
+  },
+  {
+    "id": "it-support-policy",
+    "title": "IT Support Policy",
+    "category": "IT Helpdesk",
+    "summary": "Employees can create an IT support ticket for hardware or software issues.",
+    "sampleQuestion": "Can you create an IT support ticket for my laptop issue?",
+    "isApproved": true,
+    "version": 1,
+    "updatedAt": "2026-09-01T09:00:00.000Z",
+    "updatedBy": "Admin (IT Helpdesk Manager)"
+  }
+]

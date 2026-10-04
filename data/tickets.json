@@ -1,0 +1,113 @@
+[
+  {
+    "id": "tk-1791080290888-790",
+    "ticketId": "TK-2026-103",
+    "title": "Broken keyboard",
+    "issueType": "hardware",
+    "priority": "medium",
+    "description": "Employee reported a broken keyboard and requested a replacement or repair.",
+    "status": "Open",
+    "assignedTo": "Hardware Support Desk",
+    "createdAt": "2026-10-04T02:18:10.888Z",
+    "updatedAt": "2026-10-04T02:18:10.888Z",
+    "createdBy": "Priya",
+    "comments": [
+      {
+        "id": "c-init-1791080290888",
+        "author": "System",
+        "text": "Ticket logged by Priya via Helpdesk Service.",
+        "timestamp": "2026-10-04T02:18:10.888Z"
+      }
+    ]
+  },
+  {
+    "id": "tk-1791080280237-339",
+    "ticketId": "TK-2026-102",
+    "title": "Broken Keyboard",
+    "issueType": "hardware",
+    "priority": "medium",
+    "description": "Employee reported a broken keyboard that needs replacement or repair.",
+    "status": "Open",
+    "assignedTo": "Hardware Support Desk",
+    "createdAt": "2026-10-04T02:18:00.237Z",
+    "updatedAt": "2026-10-04T02:18:00.237Z",
+    "createdBy": "Priya",
+    "comments": [
+      {
+        "id": "c-init-1791080280237",
+        "author": "System",
+        "text": "Ticket logged by Priya via Helpdesk Service.",
+        "timestamp": "2026-10-04T02:18:00.237Z"
+      }
+    ]
+  },
+  {
+    "id": "tk-1790978842431-851",
+    "ticketId": "TK-2026-101",
+    "title": "VPN client disconnecting continuously",
+    "issueType": "software",
+    "priority": "high",
+    "description": "Corporate VPN drops connection every 5 minutes during remote work.",
+    "status": "In Progress",
+    "assignedTo": "Systems & Application Support",
+    "createdAt": "2026-10-02T22:07:22.431Z",
+    "updatedAt": "2026-10-02T22:07:22.451Z",
+    "createdBy": "Priya",
+    "comments": [
+      {
+        "id": "c-init-1790978842431",
+        "author": "System",
+        "text": "Ticket logged by Priya via Helpdesk Service.",
+        "timestamp": "2026-10-02T22:07:22.431Z"
+      },
+      {
+        "id": "c-1790978842451",
+        "author": "IT Support Team",
+        "text": "Assigned to Network engineer",
+        "timestamp": "2026-10-02T22:07:22.451Z"
+      }
+    ]
+  },
+  {
+    "id": "tk-1",
+    "ticketId": "TK-2026-089",
+    "title": "Corporate password portal access check",
+    "issueType": "software",
+    "priority": "medium",
+    "description": "Self-service portal access verification and single sign-on authentication sync.",
+    "status": "Resolved",
+    "assignedTo": "IT Security & Access Desk",
+    "createdAt": "2026-09-28T09:15:00.000Z",
+    "updatedAt": "2026-09-28T11:45:00.000Z",
+    "createdBy": "Priya",
+    "comments": [
+      {
+        "id": "c-1",
+        "author": "IT Security Desk",
+        "text": "Portal credentials synchronized. Employee confirmed login is operational.",
+        "timestamp": "2026-09-28T11:45:00.000Z"
+      }
+    ]
+  },
+  {
+    "id": "tk-2",
+    "ticketId": "TK-2026-042",
+    "title": "External monitor HDMI cable request",
+    "issueType": "hardware",
+    "priority": "low",
+    "description": "Hardware cable replacement for dual-monitor workstation docking station.",
+    "status": "Resolved",
+    "assignedTo": "Hardware Services Desk",
+    "createdAt": "2026-09-24T14:30:00.000Z",
+    "updatedAt": "2026-09-24T16:00:00.000Z",
+    "createdBy": "Priya",
+    "comments": [
+      {
+        "id": "c-2",
+        "author": "Hardware Services",
+        "text": "Standard 4K HDMI cable dispatched and tested with employee monitor setup.",
+        "timestamp": "2026-09-24T16:00:00.000Z"
+      }
+    ]
+  }
+]

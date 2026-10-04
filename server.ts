@@ -1,46 +1,59 @@
 import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Content } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
+import { ticketService, type TicketStatus, type TicketIssueType, type TicketPriority } from './server/ticketService.ts';
+import { policyService } from './server/policyService.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
-const APPROVED_KNOWLEDGE_SYSTEM_INSTRUCTION = `You are the "AI Employee Helpdesk Assistant", an internal company helpdesk assistant that answers employee questions about company policies and support processes.
+const createTicketDeclaration = {
+  name: 'createITTicket',
+  description:
+    'Create an official IT support ticket in the backend service for hardware or software issues when requested by an employee.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      issueType: {
+        type: Type.STRING,
+        description: "The category of issue: 'hardware' or 'software'.",
+      },
+      title: {
+        type: Type.STRING,
+        description: 'A brief, clear title or summary of the issue.',
+      },
+      description: {
+        type: Type.STRING,
+        description: 'Detailed description of the hardware or software problem.',
+      },
+      urgency: {
+        type: Type.STRING,
+        description: "Urgency level: 'low', 'medium', 'high', or 'urgent'.",
+      },
+    },
+    required: ['issueType', 'title', 'description'],
+  },
+};
 
-APPROVED COMPANY KNOWLEDGE:
-
-LEAVE POLICY:
-Employees receive 12 casual leaves per calendar year.
-
-WORK FROM HOME POLICY:
-Employees may work from home for up to 5 days per month.
-
-MEDICAL REIMBURSEMENT POLICY:
-Employees must submit:
-- Medical bill
-- Prescription
-- Reimbursement form
-
-CORPORATE PASSWORD POLICY:
-Employees can reset their corporate password through the IT self-service portal.
-
-IT SUPPORT POLICY:
-Employees can create an IT support ticket for hardware or software issues.
-
-STRICT BEHAVIORAL RULES:
-1. Answer employee questions clearly, concisely, and professionally using ONLY the APPROVED COMPANY KNOWLEDGE provided above.
-2. NEVER invent company policies.
-3. NEVER make up information, numbers, procedures, URLs, or rules that are not explicitly in the approved knowledge above.
-4. If the answer to an employee's question cannot be found in the approved knowledge above (for example, questions about sick leave, maternity/paternity leave, carry-forward leaves, salary, bonuses, office timings, dress code, travel reimbursement, health insurance coverage limits, or general world knowledge), you MUST respond with this exact sentence:
-"I don't have enough information in the approved company knowledge base."
-5. IT TICKET CREATION RULE: Do NOT claim that an IT ticket has been created, logged, or submitted because no real ticket system is connected yet. If an employee asks you to create, open, file, or submit an IT support ticket (or asks you to log a ticket for their hardware/software issue), explicitly explain that the ticket functionality is not connected yet, and mention that per the IT Support Policy, employees can create an IT support ticket for hardware or software issues.
-6. Maintain conversation context across messages while strictly adhering to the approved company knowledge base.
-7. If an employee simply greets you (e.g., "Hello", "Hi") or asks what topics you can help with, politely introduce yourself as the AI Employee Helpdesk Assistant and list the five approved policy topics you can answer questions about: Leave Policy, Work From Home Policy, Medical Reimbursement Policy, Corporate Password Policy, and IT Support Policy.`;
+const getTicketStatusDeclaration = {
+  name: 'getTicketStatus',
+  description: 'Lookup the current status and details of an IT support ticket using its Ticket ID.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      ticketId: {
+        type: Type.STRING,
+        description: "The ticket identifier, e.g. 'TK-2026-089' or 'TK-2026-101'.",
+      },
+    },
+    required: ['ticketId'],
+  },
+};
 
 interface ChatHistoryItem {
   role: 'user' | 'model';
@@ -62,16 +75,224 @@ function getGenAIClient(): GoogleGenAI {
   });
 }
 
+async function callGeminiWithRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1500): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: unknown) {
+    const status = (err as { status?: number })?.status;
+    const msg = err instanceof Error ? err.message : '';
+    if ((status === 429 || msg.includes('RESOURCE_EXHAUSTED')) && retries > 0) {
+      await new Promise((res) => setTimeout(res, delayMs));
+      return callGeminiWithRetry(fn, retries - 1, delayMs * 2);
+    }
+    throw err;
+  }
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
   // Health check endpoint
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'AI Employee Helpdesk Assistant' });
+    res.json({
+      status: 'ok',
+      service: 'AI Employee Helpdesk Assistant & Policy Management Backend',
+      approvedPoliciesCount: policyService.getApproved().length,
+    });
   });
 
-  // Main server-side Gemini chat endpoint
+  // ==========================================
+  // POLICY MANAGEMENT API (Authorized Admin)
+  // ==========================================
+  app.get('/api/policies', (req: Request, res: Response) => {
+    const showAll = req.query.all === 'true';
+    const policies = showAll ? policyService.getAll() : policyService.getApproved();
+    res.json({ policies });
+  });
+
+  app.get('/api/policies/:id', (req: Request, res: Response) => {
+    const policy = policyService.getById(req.params.id);
+    if (!policy) {
+      res.status(404).json({ error: 'Policy not found.' });
+      return;
+    }
+    res.json({ policy });
+  });
+
+  app.post('/api/policies', (req: Request, res: Response) => {
+    const { title, category, summary, details, sampleQuestion, isApproved, updatedBy } = req.body ?? {};
+    if (!title || typeof title !== 'string' || title.trim().length === 0) {
+      res.status(400).json({ error: 'Policy title is required.' });
+      return;
+    }
+    if (!summary || typeof summary !== 'string' || summary.trim().length === 0) {
+      res.status(400).json({ error: 'Policy summary is required.' });
+      return;
+    }
+
+    const created = policyService.create({
+      title: title.trim(),
+      category: typeof category === 'string' && category.trim() ? category.trim() : 'General Policy',
+      summary: summary.trim(),
+      details: Array.isArray(details) ? details : undefined,
+      sampleQuestion: typeof sampleQuestion === 'string' ? sampleQuestion.trim() : undefined,
+      isApproved: isApproved !== undefined ? Boolean(isApproved) : true,
+      updatedBy: typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : 'Priya (Admin)',
+    });
+
+    res.status(201).json({ policy: created, message: 'Policy created and published to AI knowledge base.' });
+  });
+
+  app.put('/api/policies/:id', (req: Request, res: Response) => {
+    const { title, category, summary, details, sampleQuestion, isApproved, updatedBy } = req.body ?? {};
+
+    const updated = policyService.update(req.params.id, {
+      title,
+      category,
+      summary,
+      details,
+      sampleQuestion,
+      isApproved,
+      updatedBy: typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : 'Priya (Admin)',
+    });
+
+    if (!updated) {
+      res.status(404).json({ error: 'Policy not found.' });
+      return;
+    }
+
+    res.json({ policy: updated, message: 'Policy updated. AI chatbot is now using this latest approved version.' });
+  });
+
+  app.patch('/api/policies/:id/approval', (req: Request, res: Response) => {
+    const { isApproved, updatedBy } = req.body ?? {};
+    if (typeof isApproved !== 'boolean') {
+      res.status(400).json({ error: 'isApproved boolean is required.' });
+      return;
+    }
+
+    const updated = policyService.update(req.params.id, {
+      isApproved,
+      updatedBy: typeof updatedBy === 'string' ? updatedBy.trim() : 'Priya (Admin)',
+    });
+
+    if (!updated) {
+      res.status(404).json({ error: 'Policy not found.' });
+      return;
+    }
+
+    res.json({ policy: updated });
+  });
+
+  app.delete('/api/policies/:id', (req: Request, res: Response) => {
+    const deleted = policyService.delete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: 'Policy not found.' });
+      return;
+    }
+    res.json({ success: true, message: 'Policy deleted and removed from AI knowledge base.' });
+  });
+
+  // ==========================================
+  // IT TICKET MANAGEMENT API
+  // ==========================================
+  app.get('/api/tickets', (req: Request, res: Response) => {
+    const { status, search, issueType } = req.query;
+    const result = ticketService.getAll({
+      status: typeof status === 'string' ? status : undefined,
+      search: typeof search === 'string' ? search : undefined,
+      issueType: typeof issueType === 'string' ? issueType : undefined,
+    });
+    res.json(result);
+  });
+
+  app.get('/api/tickets/:id', (req: Request, res: Response) => {
+    const ticket = ticketService.getById(req.params.id);
+    if (!ticket) {
+      res.status(404).json({ error: 'Ticket not found.' });
+      return;
+    }
+    res.json({ ticket });
+  });
+
+  app.post('/api/tickets', (req: Request, res: Response) => {
+    const { title, issueType, description, priority, createdBy } = req.body ?? {};
+    if (!title || typeof title !== 'string' || title.trim().length === 0) {
+      res.status(400).json({ error: 'Title is required.' });
+      return;
+    }
+    if (!description || typeof description !== 'string' || description.trim().length === 0) {
+      res.status(400).json({ error: 'Description is required.' });
+      return;
+    }
+
+    const newTicket = ticketService.create({
+      title: title.trim(),
+      issueType: issueType === 'hardware' ? 'hardware' : 'software',
+      description: description.trim(),
+      priority: (priority as TicketPriority) || 'medium',
+      createdBy: typeof createdBy === 'string' && createdBy.trim() ? createdBy.trim() : 'Priya',
+    });
+
+    res.status(201).json({ ticket: newTicket });
+  });
+
+  app.patch('/api/tickets/:id/status', (req: Request, res: Response) => {
+    const { status, note } = req.body ?? {};
+    if (!status) {
+      res.status(400).json({ error: 'Status is required.' });
+      return;
+    }
+
+    const updated = ticketService.updateStatus(
+      req.params.id,
+      status as TicketStatus,
+      typeof note === 'string' ? note : undefined
+    );
+
+    if (!updated) {
+      res.status(404).json({ error: 'Ticket not found.' });
+      return;
+    }
+
+    res.json({ ticket: updated });
+  });
+
+  app.post('/api/tickets/:id/comments', (req: Request, res: Response) => {
+    const { author, text } = req.body ?? {};
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      res.status(400).json({ error: 'Comment text is required.' });
+      return;
+    }
+
+    const updated = ticketService.addComment(
+      req.params.id,
+      typeof author === 'string' && author.trim() ? author.trim() : 'Priya',
+      text.trim()
+    );
+
+    if (!updated) {
+      res.status(404).json({ error: 'Ticket not found.' });
+      return;
+    }
+
+    res.json({ ticket: updated });
+  });
+
+  app.delete('/api/tickets/:id', (req: Request, res: Response) => {
+    const deleted = ticketService.delete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: 'Ticket not found.' });
+      return;
+    }
+    res.json({ success: true, message: 'Ticket deleted successfully.' });
+  });
+
+  // ==========================================
+  // MAIN SERVER-SIDE GEMINI CHAT ENDPOINT
+  // Automatically uses latest approved policies
+  // ==========================================
   app.post('/api/chat', async (req: Request, res: Response) => {
     try {
       const { message, history } = req.body ?? {};
@@ -100,8 +321,11 @@ async function startServer() {
         return;
       }
 
-      // 3. Build conversation contents to maintain context while chat is open
-      const contents: Content[] = [];
+      // 3. Dynamically construct system instructions using the LATEST approved policies
+      const currentSystemInstruction = policyService.generateSystemInstruction();
+
+      // 4. Build conversation contents to maintain context while chat is open
+      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
       if (Array.isArray(history)) {
         for (const item of history as ChatHistoryItem[]) {
           if (
@@ -123,20 +347,136 @@ async function startServer() {
         parts: [{ text: trimmedMessage }],
       });
 
-      // 4. Call Gemini on the server
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents,
-        config: {
-          systemInstruction: APPROVED_KNOWLEDGE_SYSTEM_INSTRUCTION,
-          temperature: 0.1,
-        },
-      });
+      // 5. Call Gemini on the server with tools enabled
+      const initialResponse = await callGeminiWithRetry(() =>
+        ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents,
+          config: {
+            systemInstruction: currentSystemInstruction,
+            temperature: 0.1,
+            tools: [{ functionDeclarations: [createTicketDeclaration, getTicketStatusDeclaration] }],
+          },
+        })
+      );
 
-      const replyText = response.text;
+      let finalReplyText: string | undefined = initialResponse.text;
+      let createdTicketResult = null;
 
-      // 5. Handle unexpected empty response from Gemini
-      if (typeof replyText !== 'string' || replyText.trim().length === 0) {
+      // 6. Handle tool call if Gemini invokes the IT ticket service
+      const functionCalls = initialResponse.functionCalls;
+      if (functionCalls && functionCalls.length > 0) {
+        const toolResponseParts: Array<{
+          functionResponse: {
+            name: string;
+            id?: string;
+            response: Record<string, unknown>;
+          };
+        }> = [];
+
+        for (const call of functionCalls) {
+          if (call.name === 'createITTicket') {
+            const args = (call.args as {
+              issueType?: string;
+              title?: string;
+              description?: string;
+              urgency?: string;
+            }) || {};
+
+            const newTicket = ticketService.create({
+              title: args.title || 'IT Support Ticket',
+              issueType: (args.issueType as TicketIssueType) || 'hardware',
+              description: args.description || trimmedMessage,
+              priority: (args.urgency as TicketPriority) || 'medium',
+              createdBy: 'Priya',
+            });
+
+            createdTicketResult = newTicket;
+
+            toolResponseParts.push({
+              functionResponse: {
+                name: call.name,
+                id: call.id,
+                response: {
+                  success: true,
+                  ticketId: newTicket.ticketId,
+                  title: newTicket.title,
+                  issueType: newTicket.issueType,
+                  priority: newTicket.priority,
+                  status: newTicket.status,
+                  createdAt: newTicket.createdAt,
+                  assignedTo: newTicket.assignedTo,
+                  createdBy: newTicket.createdBy,
+                  message: 'IT support ticket created successfully in the backend service.',
+                },
+              },
+            });
+          } else if (call.name === 'getTicketStatus') {
+            const args = (call.args as { ticketId?: string }) || {};
+            const ticket = ticketService.getById(args.ticketId || '');
+
+            if (ticket) {
+              toolResponseParts.push({
+                functionResponse: {
+                  name: call.name,
+                  id: call.id,
+                  response: {
+                    found: true,
+                    ticketId: ticket.ticketId,
+                    title: ticket.title,
+                    status: ticket.status,
+                    issueType: ticket.issueType,
+                    priority: ticket.priority,
+                    assignedTo: ticket.assignedTo,
+                    createdAt: ticket.createdAt,
+                    updatedAt: ticket.updatedAt,
+                    commentsCount: ticket.comments.length,
+                  },
+                },
+              });
+            } else {
+              toolResponseParts.push({
+                functionResponse: {
+                  name: call.name,
+                  id: call.id,
+                  response: {
+                    found: false,
+                    message: `No ticket found with ID ${args.ticketId}.`,
+                  },
+                },
+              });
+            }
+          }
+        }
+
+        if (toolResponseParts.length > 0) {
+          const followUpContents = [
+            ...contents,
+            initialResponse.candidates?.[0]?.content,
+            {
+              role: 'user',
+              parts: toolResponseParts,
+            },
+          ];
+
+          const followUpResponse = await callGeminiWithRetry(() =>
+            ai.models.generateContent({
+              model: 'gemini-3.8-flash',
+              contents: followUpContents as unknown as Parameters<typeof ai.models.generateContent>[0]['contents'],
+              config: {
+                systemInstruction: currentSystemInstruction,
+                temperature: 0.1,
+                tools: [{ functionDeclarations: [createTicketDeclaration, getTicketStatusDeclaration] }],
+              },
+            })
+          );
+
+          finalReplyText = followUpResponse.text;
+        }
+      }
+
+      // 7. Handle unexpected empty response from Gemini
+      if (typeof finalReplyText !== 'string' || finalReplyText.trim().length === 0) {
         res.status(502).json({
           error:
             'Received an unexpected empty response from the AI service. Please try asking your question again.',
@@ -146,8 +486,9 @@ async function startServer() {
       }
 
       res.json({
-        reply: replyText.trim(),
+        reply: finalReplyText.trim(),
         timestamp: new Date().toISOString(),
+        createdTicket: createdTicketResult,
       });
     } catch (err: unknown) {
       console.error('Error in /api/chat:', err);
@@ -196,25 +537,25 @@ async function startServer() {
   });
 
   // Catch-all for unknown API routes so they return JSON instead of HTML
-  app.all('/api/*splat', (_req: Request, res: Response) => {
+  app.all('/api/*', (_req: Request, res: Response) => {
     res.status(404).json({
       error: 'API endpoint not found.',
       code: 'NOT_FOUND',
     });
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'production') {
+    const distPath = path.resolve(__dirname, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*splat', (_req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
