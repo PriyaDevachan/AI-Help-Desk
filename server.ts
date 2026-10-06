@@ -91,6 +91,19 @@ async function callGeminiWithRetry<T>(fn: () => Promise<T>, retries = 2, delayMs
 
 async function startServer() {
   const app = express();
+
+  // CORS & Preflight handling for iframe / preview / cross-origin requests
+  app.use((req: Request, res: Response, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '1mb' }));
 
   // Health check endpoint
@@ -106,92 +119,122 @@ async function startServer() {
   // POLICY MANAGEMENT API (Authorized Admin)
   // ==========================================
   app.get('/api/policies', (req: Request, res: Response) => {
-    const showAll = req.query.all === 'true';
-    const policies = showAll ? policyService.getAll() : policyService.getApproved();
-    res.json({ policies });
+    try {
+      const showAll = req.query.all === 'true';
+      const policies = showAll ? policyService.getAll() : policyService.getApproved();
+      res.json({ policies });
+    } catch (err) {
+      console.error('Error fetching policies:', err);
+      res.status(500).json({ error: 'Failed to retrieve policies.' });
+    }
   });
 
   app.get('/api/policies/:id', (req: Request, res: Response) => {
-    const policy = policyService.getById(req.params.id);
-    if (!policy) {
-      res.status(404).json({ error: 'Policy not found.' });
-      return;
+    try {
+      const policy = policyService.getById(req.params.id);
+      if (!policy) {
+        res.status(404).json({ error: 'Policy not found.' });
+        return;
+      }
+      res.json({ policy });
+    } catch (err) {
+      console.error('Error fetching policy:', err);
+      res.status(500).json({ error: 'Failed to retrieve policy.' });
     }
-    res.json({ policy });
   });
 
   app.post('/api/policies', (req: Request, res: Response) => {
-    const { title, category, summary, details, sampleQuestion, isApproved, updatedBy } = req.body ?? {};
-    if (!title || typeof title !== 'string' || title.trim().length === 0) {
-      res.status(400).json({ error: 'Policy title is required.' });
-      return;
-    }
-    if (!summary || typeof summary !== 'string' || summary.trim().length === 0) {
-      res.status(400).json({ error: 'Policy summary is required.' });
-      return;
-    }
+    try {
+      const { title, category, summary, details, sampleQuestion, isApproved, updatedBy } = req.body ?? {};
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        res.status(400).json({ error: 'Policy title is required.' });
+        return;
+      }
+      if (!summary || typeof summary !== 'string' || summary.trim().length === 0) {
+        res.status(400).json({ error: 'Policy summary is required.' });
+        return;
+      }
 
-    const created = policyService.create({
-      title: title.trim(),
-      category: typeof category === 'string' && category.trim() ? category.trim() : 'General Policy',
-      summary: summary.trim(),
-      details: Array.isArray(details) ? details : undefined,
-      sampleQuestion: typeof sampleQuestion === 'string' ? sampleQuestion.trim() : undefined,
-      isApproved: isApproved !== undefined ? Boolean(isApproved) : true,
-      updatedBy: typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : 'Priya (Admin)',
-    });
+      const created = policyService.create({
+        title: title.trim(),
+        category: typeof category === 'string' && category.trim() ? category.trim() : 'General Policy',
+        summary: summary.trim(),
+        details: Array.isArray(details) ? details : undefined,
+        sampleQuestion: typeof sampleQuestion === 'string' ? sampleQuestion.trim() : undefined,
+        isApproved: isApproved !== undefined ? Boolean(isApproved) : true,
+        updatedBy: typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : 'Priya (Admin)',
+      });
 
-    res.status(201).json({ policy: created, message: 'Policy created and published to AI knowledge base.' });
+      res.status(201).json({ policy: created, message: 'Policy created and published to AI knowledge base.' });
+    } catch (err) {
+      console.error('Error creating policy:', err);
+      res.status(500).json({ error: 'Failed to create policy.' });
+    }
   });
 
   app.put('/api/policies/:id', (req: Request, res: Response) => {
-    const { title, category, summary, details, sampleQuestion, isApproved, updatedBy } = req.body ?? {};
+    try {
+      const { title, category, summary, details, sampleQuestion, isApproved, updatedBy } = req.body ?? {};
 
-    const updated = policyService.update(req.params.id, {
-      title,
-      category,
-      summary,
-      details,
-      sampleQuestion,
-      isApproved,
-      updatedBy: typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : 'Priya (Admin)',
-    });
+      const updated = policyService.update(req.params.id, {
+        title,
+        category,
+        summary,
+        details,
+        sampleQuestion,
+        isApproved,
+        updatedBy: typeof updatedBy === 'string' && updatedBy.trim() ? updatedBy.trim() : 'Priya (Admin)',
+      });
 
-    if (!updated) {
-      res.status(404).json({ error: 'Policy not found.' });
-      return;
+      if (!updated) {
+        res.status(404).json({ error: 'Policy not found.' });
+        return;
+      }
+
+      res.json({ policy: updated, message: 'Policy updated. AI chatbot is now using this latest approved version.' });
+    } catch (err) {
+      console.error('Error updating policy:', err);
+      res.status(500).json({ error: 'Failed to update policy.' });
     }
-
-    res.json({ policy: updated, message: 'Policy updated. AI chatbot is now using this latest approved version.' });
   });
 
   app.patch('/api/policies/:id/approval', (req: Request, res: Response) => {
-    const { isApproved, updatedBy } = req.body ?? {};
-    if (typeof isApproved !== 'boolean') {
-      res.status(400).json({ error: 'isApproved boolean is required.' });
-      return;
+    try {
+      const { isApproved, updatedBy } = req.body ?? {};
+      if (typeof isApproved !== 'boolean') {
+        res.status(400).json({ error: 'isApproved boolean is required.' });
+        return;
+      }
+
+      const updated = policyService.update(req.params.id, {
+        isApproved,
+        updatedBy: typeof updatedBy === 'string' ? updatedBy.trim() : 'Priya (Admin)',
+      });
+
+      if (!updated) {
+        res.status(404).json({ error: 'Policy not found.' });
+        return;
+      }
+
+      res.json({ policy: updated });
+    } catch (err) {
+      console.error('Error toggling policy approval:', err);
+      res.status(500).json({ error: 'Failed to update policy approval status.' });
     }
-
-    const updated = policyService.update(req.params.id, {
-      isApproved,
-      updatedBy: typeof updatedBy === 'string' ? updatedBy.trim() : 'Priya (Admin)',
-    });
-
-    if (!updated) {
-      res.status(404).json({ error: 'Policy not found.' });
-      return;
-    }
-
-    res.json({ policy: updated });
   });
 
   app.delete('/api/policies/:id', (req: Request, res: Response) => {
-    const deleted = policyService.delete(req.params.id);
-    if (!deleted) {
-      res.status(404).json({ error: 'Policy not found.' });
-      return;
+    try {
+      const deleted = policyService.delete(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Policy not found.' });
+        return;
+      }
+      res.json({ success: true, message: 'Policy deleted and removed from AI knowledge base.' });
+    } catch (err) {
+      console.error('Error deleting policy:', err);
+      res.status(500).json({ error: 'Failed to delete policy.' });
     }
-    res.json({ success: true, message: 'Policy deleted and removed from AI knowledge base.' });
   });
 
   // ==========================================
@@ -557,6 +600,15 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   }
+
+  // Global error handler so any unhandled error always returns JSON instead of Express HTML
+  app.use((err: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
+    console.error('Unhandled server error:', err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'An unexpected server error occurred.',
+      code: 'SERVER_ERROR',
+    });
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`AI Employee Helpdesk Assistant running on http://0.0.0.0:${PORT}`);

@@ -58,5 +58,21 @@
     "version": 1,
     "updatedAt": "2026-09-01T09:00:00.000Z",
     "updatedBy": "Admin (IT Helpdesk Manager)"
+  },
+  {
+    "id": "hardware-software-policy",
+    "title": "Hardware_software Policy",
+    "category": "HR & Time Off",
+    "summary": "Tickets should be created with Employee approval. for all ticket related querries employees should follow up with itservice@employer.com",
+    "details": [
+      "System id",
+      "Isuue Details",
+      "Employee id"
+    ],
+    "sampleQuestion": "My keyboard is not working.How can i fix it",
+    "isApproved": true,
+    "version": 2,
+    "updatedAt": "2026-10-06T22:55:16.593Z",
+    "updatedBy": "Priya (Admin)"
   }
 ]

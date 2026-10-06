@@ -448,7 +448,10 @@ export default function App() {
     try {
       const res = await fetch('/api/tickets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: JSON.stringify({
           title: formTitle.trim(),
           issueType: formCategory,
@@ -458,12 +461,29 @@ export default function App() {
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data?.error || 'Failed to create ticket.');
+      const contentType = res.headers.get('content-type') || '';
+      let data: any = null;
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          // ignore json parse error
+        }
+      } else {
+        const text = await res.text();
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch {
+            // non-json
+          }
+        }
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || `Failed to create ticket (${res.status}).`);
+      }
+
       if (data?.ticket) {
         setTickets((prev) => [data.ticket, ...prev]);
         setNewTicketModalOpen(false);
@@ -584,21 +604,50 @@ export default function App() {
     };
 
     try {
-      const url = editingPolicy ? `/api/policies/${editingPolicy.id}` : '/api/policies';
+      const url = editingPolicy ? `/api/policies/${encodeURIComponent(editingPolicy.id)}` : '/api/policies';
       const method = editingPolicy ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data?.error || 'Failed to save policy');
+      const contentType = res.headers.get('content-type') || '';
+      let data: any = null;
+
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          // ignore json parse error
+        }
+      } else {
+        const text = await res.text();
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch {
+            // response is non-JSON (e.g. HTML proxy error)
+          }
+        }
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        const errorMsg =
+          data?.error ||
+          data?.message ||
+          `Server returned status ${res.status} (${res.statusText || 'Error'}). Please try again.`;
+        throw new Error(errorMsg);
+      }
+
+      if (!data?.policy) {
+        throw new Error('Server saved the policy but did not return the policy record.');
+      }
+
       setPolicyModalOpen(false);
       setPolicySuccessBanner(
         editingPolicy
